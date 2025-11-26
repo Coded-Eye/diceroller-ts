@@ -34,7 +34,7 @@ const value6 = "10d10kh5" // keep the 5 higest dice (thisis default k5 === kh5)
 const value7 = "10d10kl3" // keep the 3 lowest dice
 
 const value8 = "10d10rh5" // re-roll any dice higher than 5
-const value9 = "10d10rl5" // re-roll any dice lower than 5 (this is default r5 === el5)
+const value9 = "10d10rl5" // re-roll any dice lower than 5 (this is default r5 === rl5)
 
 // also. all these modifiers are chainable
 const expr = "10d100rl50e50e400kh5kh3" 
