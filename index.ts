@@ -27,9 +27,15 @@ function regex_tokenize<T extends string>(expr: string, rules: [T, RegExp][]) {
 type Tokens = "DiceExpr" | "Operator" | "NumericLiteral" | "null" | "Delimiter"
 type OperatorTokenValues = "+" | "-" | "*" | "/"
 type DelimiterTokenValues = "(" | ")"
-type DiceParts = "Dice" | "Explode" | "Reroll" | "Keep"
 type Rule<T> = [T, RegExp]
+type DiceParts = "Dice" | "Explode" | "Reroll" | "Keep"
 type ResultTokens = ReturnType<typeof DiceRoller.prototype.tokenize>
+interface Dice {
+    type: 'Dice', 
+    value: number, 
+    explosions: number[]
+    reroll_times: number
+}
 
 
 class DiceRoller {
@@ -91,13 +97,6 @@ class DiceRoller {
     }
 
     DiceExpr(token: Extract<ResultTokens[number], {value: unknown[] } > ) {
-        interface Dice {
-            type: 'Dice', 
-            value: number, 
-            explosions: number[]
-            reroll_times: number
-        }
-
         let result = {
             type: token.type as Extract<Tokens, "DiceExpr">,
             dice_amount: 0,
