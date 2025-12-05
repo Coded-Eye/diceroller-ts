@@ -146,7 +146,7 @@ class DiceRoller {
 
     DiceExpr(token: Extract<ResultTokens[number], {value: unknown[] } > ) {
         let result = {
-            unary_sign: "+" as "+" | "-",
+            unary_sign: "+",
             type: token.type as Extract<Tokens, "DiceExpr">,
             dice_amount: 0,
             dice_size: 0,
@@ -460,10 +460,3 @@ class DiceRoller {
 }
 
 export { DiceRoller }
-
-const diceRoller = new DiceRoller()
-const tokens = diceRoller.tokenize("1d20+5--3d40")
-// console.dir(tokens, { depth: null })
-
-const result = diceRoller.roll(tokens)
-console.dir(result, { depth: null })
