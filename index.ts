@@ -3,6 +3,8 @@ function regex_tokenize<T extends string>(expr: string, rules: [T, RegExp][]) {
     let cursor: number = 0
     let prev_slice: string = ""
 
+    let previous_token: { type: T, value: string } | null = null
+
     while (cursor < expr.length) {
         const slice = expr.slice(cursor)
         if (slice === prev_slice) { throw new SyntaxError(`Unable to tokenize at ${cursor + 1} --> ${slice}`) }
@@ -16,7 +18,15 @@ function regex_tokenize<T extends string>(expr: string, rules: [T, RegExp][]) {
 
             if (tokenType === "null") break
 
-            tokens.push({ type: tokenType, value: matched[0] })
+            if (previous_token !== null) {
+                if (previous_token.type === tokenType) {
+                    cursor -= matched[0].length
+                    continue
+                }
+            }
+            
+            previous_token = { type: tokenType, value: matched[0] }
+            tokens.push(previous_token)
             break
         }
     }
@@ -28,7 +38,7 @@ type Tokens = "DiceExpr" | "Operator" | "NumericLiteral" | "null" | "Delimiter"
 type OperatorTokenValues = "+" | "-" | "*" | "/"
 type DelimiterTokenValues = "(" | ")"
 type Rule<T> = [T, RegExp]
-type DiceParts = "Dice" | "Explode" | "Reroll" | "Keep"
+type DiceParts = "UnarySign" | "Dice" | "Explode" | "Reroll" | "Keep"
 type ResultTokens = ReturnType<typeof DiceRoller.prototype.tokenize>
 interface Dice {
     type: 'Dice', 
@@ -40,16 +50,18 @@ interface Dice {
 
 class DiceRoller {
     TokensRULES: Rule<Tokens>[] = [
-        ["DiceExpr", /^(?:[1-9]\d*)?d[1-9]\d*(?:k[lh]?[1-9]\d*|e[lh]?[1-9]\d*|r[lh]?[1-9]\d*)*/],
-        ["Operator", /^[+-/*]/],
-        ["NumericLiteral", /^\d+/],
-        ["Delimiter", /^[\(\)]/],
-
         // null is for white space and stuff that will not be tokenized
         ["null", /^\s+/],
+
+        ["Delimiter", /^[\(\)]/],
+        ["DiceExpr", /^[-+]?(?:[1-9]\d*)?d[1-9]\d*(?:k[lh]?[1-9]\d*|e[lh]?[1-9]\d*|r[lh]?[1-9]\d*)*/],
+        ["NumericLiteral", /^[-+]?\d+/],
+        ["Operator", /^[+-/*]/],
+
     ]
 
     DicePartsRULES: Rule<DiceParts>[] = [
+        ["UnarySign", /[-+]/],
         ["Dice", /^(?:[1-9]\d*)?d[1-9]\d*/],
         ["Explode", /^e[lh]?[1-9]\d*/],
         ["Keep", /^k[lh]?[1-9]\d*/],
@@ -98,15 +110,22 @@ class DiceRoller {
 
     DiceExpr(token: Extract<ResultTokens[number], {value: unknown[] } > ) {
         let result = {
+            unary_sign: "+" as "+" | "-",
             type: token.type as Extract<Tokens, "DiceExpr">,
             dice_amount: 0,
             dice_size: 0,
             rolls: new Array<Dice>(),
-            discarded_rolls: [] as Dice[][]
+            discarded_rolls: [] as Dice[][],
+            sum: 0
         }
 
         for (const ptoken of token.value) {
             switch (ptoken.type) {
+                case "UnarySign": {
+                    result.unary_sign = ptoken.value
+                    break
+                }
+
                 case "Dice": {
                     const dice_parts = ptoken.value.split('d')
                     result.dice_amount = dice_parts[0] === "" ? 1 : Number(dice_parts[0])
@@ -237,6 +256,11 @@ class DiceRoller {
             }
         }
 
+        result.sum = result.rolls.reduce((a, c) => a + c.value, 0)
+        if (result.unary_sign === "-") {
+            result.sum = -result.sum
+        }
+
         return result
     }
 
@@ -288,7 +312,7 @@ class DiceRoller {
                 }
 
                 case "DiceExpr": {
-                    ReversePolishNotation.push(token.rolls.reduce((a, c) => a + c.value, 0))
+                    ReversePolishNotation.push(token.sum)
                     break;
                 }
 
@@ -340,6 +364,22 @@ class DiceRoller {
         return ReversePolishNotation.map((v) => typeof v === "number" ? v : v.operator)
     }
 
+    MathExprValidity(rpn: ReturnType<typeof DiceRoller.prototype.ShuntingYardAlgorithm>): void {
+        let valence = 0
+
+        rpn.forEach(val => {
+            if (typeof val === "number") {
+                valence++;
+            } else {
+                valence--;
+            }
+        })
+
+        if (valence !== 1) {
+            throw new Error("the mathematical expression is not valid")
+        }
+    }
+
     ComputeReversePolishNotation(rpn: ReturnType<typeof DiceRoller.prototype.ShuntingYardAlgorithm>): number {
         const results: number[] = []
 
@@ -376,6 +416,7 @@ class DiceRoller {
     roll(tokens: ResultTokens) {
         const rolled = this.Parse(tokens)
         const reverse_polish_notation = this.ShuntingYardAlgorithm(rolled)
+        this.MathExprValidity(reverse_polish_notation)
         const result = this.ComputeReversePolishNotation(reverse_polish_notation)
 
         return [rolled, result]
