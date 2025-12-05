@@ -1,9 +1,23 @@
-function regex_tokenize<T extends string>(expr: string, rules: [T, RegExp][]) {
-    const tokens: { type: T, value: string }[] = []
+type Rule<T> = [T, RegExp]
+type DiceParts = "UnarySign" | "Dice" | "Explode" | "Reroll" | "Keep"
+type Tokens = "DiceExpr" | "Operator" | "NumericLiteral" | "null" | "Delimiter"
+type OperatorTokenValues = "+" | "-" | "*" | "/"
+type DelimiterTokenValues = "(" | ")"
+type ResultTokens = ReturnType<typeof DiceRoller.prototype.tokenize>
+interface Dice {
+    type: 'Dice', 
+    value: number, 
+    explosions: number[]
+    reroll_times: number
+}
+
+function exprs_tokenizer(expr: string, rules: Rule<Tokens>[]) {
+    const tokens: { type: Tokens, value: string }[] = []
     let cursor: number = 0
     let prev_slice: string = ""
 
-    let previous_token: { type: T, value: string } | null = null
+    // operator can't be before either DiceExpr or a number. so this will be false after one of them.
+    let operator_check = true
 
     while (cursor < expr.length) {
         const slice = expr.slice(cursor)
@@ -12,21 +26,29 @@ function regex_tokenize<T extends string>(expr: string, rules: [T, RegExp][]) {
 
         for (const [tokenType, regexpr] of rules) {
             const matched = regexpr.exec(slice)
-
-            if (matched === null) continue
-            cursor += matched[0].length
-
-            if (tokenType === "null") break
-
-            if (previous_token !== null) {
-                if (previous_token.type === tokenType) {
-                    cursor -= matched[0].length
-                    continue
-                }
-            }
             
-            previous_token = { type: tokenType, value: matched[0] }
-            tokens.push(previous_token)
+            if (matched === null) continue
+            
+            cursor += matched[0].length
+            
+            if (tokenType === "null") break
+            
+            // these tokens can't follow one another, so until another operator get found these get skiped
+            if ((tokenType === "DiceExpr" || tokenType === "NumericLiteral") && operator_check === false) {
+                cursor -= matched[0].length
+                continue
+
+                // operator found. the next DiceExpr or Number can be tokenized
+            } else if (tokenType === "Operator") {
+                operator_check = true
+            }
+                        
+            // check false after it saw one of these so it begins looking for the operator
+            if (tokenType === "DiceExpr" || tokenType === "NumericLiteral") {
+                operator_check = false
+            }
+
+            tokens.push({ type: tokenType, value: matched[0] })
             break
         }
     }
@@ -34,17 +56,31 @@ function regex_tokenize<T extends string>(expr: string, rules: [T, RegExp][]) {
     return tokens
 }
 
-type Tokens = "DiceExpr" | "Operator" | "NumericLiteral" | "null" | "Delimiter"
-type OperatorTokenValues = "+" | "-" | "*" | "/"
-type DelimiterTokenValues = "(" | ")"
-type Rule<T> = [T, RegExp]
-type DiceParts = "UnarySign" | "Dice" | "Explode" | "Reroll" | "Keep"
-type ResultTokens = ReturnType<typeof DiceRoller.prototype.tokenize>
-interface Dice {
-    type: 'Dice', 
-    value: number, 
-    explosions: number[]
-    reroll_times: number
+
+function dice_parts_tokenizer(expr: string, rules: Rule<DiceParts>[]) {
+    const tokens: { type: DiceParts, value: string }[] = []
+    let cursor: number = 0
+    let prev_slice: string = ""
+
+    while (cursor < expr.length) {
+        const slice = expr.slice(cursor)
+        if (slice === prev_slice) { throw new SyntaxError(`Unable to tokenize at ${cursor + 1} --> ${slice}`) }
+        prev_slice = slice
+
+        for (const [tokenType, regexpr] of rules) {
+            const matched = regexpr.exec(slice)
+            
+            if (matched === null) continue
+            cursor += matched[0].length
+            
+            // if (tokenType === "null") break
+            
+            tokens.push({ type: tokenType, value: matched[0] })
+            break
+        }
+    }
+
+    return tokens
 }
 
 
@@ -61,7 +97,7 @@ class DiceRoller {
     ]
 
     DicePartsRULES: Rule<DiceParts>[] = [
-        ["UnarySign", /[-+]/],
+        ["UnarySign", /^[-+]/],
         ["Dice", /^(?:[1-9]\d*)?d[1-9]\d*/],
         ["Explode", /^e[lh]?[1-9]\d*/],
         ["Keep", /^k[lh]?[1-9]\d*/],
@@ -69,11 +105,11 @@ class DiceRoller {
     ]
 
     tokenize(expr: string) {
-        const tokens = regex_tokenize<Tokens>(expr, this.TokensRULES)
+        const tokens = exprs_tokenizer(expr, this.TokensRULES)
             .map((v) => {
                 if (v.type === "DiceExpr") return {
-                    type: v.type as Extract<Tokens, "DiceExpr">,
-                    value: regex_tokenize<DiceParts>(v.value, this.DicePartsRULES)
+                    type: v.type,
+                    value: dice_parts_tokenizer(v.value, this.DicePartsRULES)
                 }
 
                 return v
@@ -424,3 +460,10 @@ class DiceRoller {
 }
 
 export { DiceRoller }
+
+const diceRoller = new DiceRoller()
+const tokens = diceRoller.tokenize("1d20+5--3d40")
+// console.dir(tokens, { depth: null })
+
+const result = diceRoller.roll(tokens)
+console.dir(result, { depth: null })
